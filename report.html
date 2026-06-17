@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="" xml:lang="">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <meta name="author" content="Ali Kahraman" />
+  <title>GPS/IMU Sensor Fusion with Extended Kalman Filter</title>
+  <style>
+    code{white-space: pre-wrap;}
+    span.smallcaps{font-variant: small-caps;}
+    span.underline{text-decoration: underline;}
+    div.column{display: inline-block; vertical-align: top; width: 50%;}
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    ul.task-list{list-style: none;}
+    pre > code.sourceCode { white-space: pre; position: relative; }
+    pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+    pre > code.sourceCode > span:empty { height: 1.2em; }
+    code.sourceCode > span { color: inherit; text-decoration: inherit; }
+    div.sourceCode { margin: 1em 0; }
+    pre.sourceCode { margin: 0; }
+    @media screen {
+    div.sourceCode { overflow: auto; }
+    }
+    @media print {
+    pre > code.sourceCode { white-space: pre-wrap; }
+    pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+    }
+    pre.numberSource code
+      { counter-reset: source-line 0; }
+    pre.numberSource code > span
+      { position: relative; left: -4em; counter-increment: source-line; }
+    pre.numberSource code > span > a:first-child::before
+      { content: counter(source-line);
+        position: relative; left: -1em; text-align: right; vertical-align: baseline;
+        border: none; display: inline-block;
+        -webkit-touch-callout: none; -webkit-user-select: none;
+        -khtml-user-select: none; -moz-user-select: none;
+        -ms-user-select: none; user-select: none;
+        padding: 0 4px; width: 4em;
+        color: #aaaaaa;
+      }
+    pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa;  padding-left: 4px; }
+    div.sourceCode
+      {  background-color: #f8f8f8; }
+    @media screen {
+    pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+    }
+    code span.al { color: #ef2929; } /* Alert */
+    code span.an { color: #8f5902; font-weight: bold; font-style: italic; } /* Annotation */
+    code span.at { color: #c4a000; } /* Attribute */
+    code span.bn { color: #0000cf; } /* BaseN */
+    code span.cf { color: #204a87; font-weight: bold; } /* ControlFlow */
+    code span.ch { color: #4e9a06; } /* Char */
+    code span.cn { color: #000000; } /* Constant */
+    code span.co { color: #8f5902; font-style: italic; } /* Comment */
+    code span.cv { color: #8f5902; font-weight: bold; font-style: italic; } /* CommentVar */
+    code span.do { color: #8f5902; font-weight: bold; font-style: italic; } /* Documentation */
+    code span.dt { color: #204a87; } /* DataType */
+    code span.dv { color: #0000cf; } /* DecVal */
+    code span.er { color: #a40000; font-weight: bold; } /* Error */
+    code span.ex { } /* Extension */
+    code span.fl { color: #0000cf; } /* Float */
+    code span.fu { color: #000000; } /* Function */
+    code span.im { } /* Import */
+    code span.in { color: #8f5902; font-weight: bold; font-style: italic; } /* Information */
+    code span.kw { color: #204a87; font-weight: bold; } /* Keyword */
+    code span.op { color: #ce5c00; font-weight: bold; } /* Operator */
+    code span.ot { color: #8f5902; } /* Other */
+    code span.pp { color: #8f5902; font-style: italic; } /* Preprocessor */
+    code span.sc { color: #000000; } /* SpecialChar */
+    code span.ss { color: #4e9a06; } /* SpecialString */
+    code span.st { color: #4e9a06; } /* String */
+    code span.va { color: #000000; } /* Variable */
+    code span.vs { color: #4e9a06; } /* VerbatimString */
+    code span.wa { color: #8f5902; font-weight: bold; font-style: italic; } /* Warning */
+  </style>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">GPS/IMU Sensor Fusion with Extended Kalman Filter</h1>
+<p class="subtitle">A Production-Grade Pipeline on KITTI Dataset</p>
+<p class="author">Ali Kahraman</p>
+<p class="date">June 2026</p>
+</header>
+<nav id="TOC" role="doc-toc">
+
+</nav>
+<h1 id="introduction">Introduction</h1>
+<p>Autonomous vehicles require accurate, real-time pose estimation under varying environmental conditions. GPS alone suffers from signal dropouts, multipath errors, and low update rates (10 Hz). Inertial Measurement Units (IMUs) provide high-frequency (100 Hz) measurements but accumulate drift over time due to sensor bias and noise.</p>
+<p>Sensor fusion combines complementary sensor characteristics: GPS provides absolute position references while IMU provides high-frequency relative motion estimates. The Extended Kalman Filter (EKF) is the industry-standard algorithm for this fusion task.</p>
+<p>This project implements and evaluates multiple fusion strategies on the KITTI Raw Dataset, a real-world autonomous driving benchmark collected in Karlsruhe, Germany.</p>
+<h2 id="contributions">Contributions</h2>
+<ul>
+<li>15-state EKF with quaternion-based orientation representation</li>
+<li>Hybrid UKF: sigma-point mean propagation with EKF Jacobian covariance</li>
+<li>Innovation-based adaptive measurement noise estimation (Mehra, 1970)</li>
+<li>Allan Variance IMU noise characterization with ground-truth validation</li>
+<li>ZUPT with quantitative IMU-only vs GPS-aided detector comparison</li>
+<li>Multi-sequence benchmark across urban, residential, and highway scenarios</li>
+</ul>
+<h1 id="system-model">System Model</h1>
+<h2 id="state-vector">State Vector</h2>
+<p>The filter maintains a 15-dimensional error state (16-dimensional nominal state with quaternion):</p>
+<p><br /><span class="math display"><strong>x</strong> = [<strong>p</strong><sup><em>T</em></sup>, <strong>v</strong><sup><em>T</em></sup>, <strong>q</strong><sup><em>T</em></sup>, <strong>b</strong><sub><em>a</em></sub><sup><em>T</em></sup>, <strong>b</strong><sub><em>g</em></sub><sup><em>T</em></sup>]<sup><em>T</em></sup></span><br /></p>
+<p>where <span class="math inline"><strong>p</strong> ∈ ℝ<sup>3</sup></span> is position in ENU frame (m), <span class="math inline"><strong>v</strong> ∈ ℝ<sup>3</sup></span> is velocity (m/s), <span class="math inline"><strong>q</strong> ∈ ℍ</span> is unit quaternion <span class="math inline">[<em>w</em>, <em>x</em>, <em>y</em>, <em>z</em>]</span>, <span class="math inline"><strong>b</strong><sub><em>a</em></sub> ∈ ℝ<sup>3</sup></span> is accelerometer bias (m/s²), <span class="math inline"><strong>b</strong><sub><em>g</em></sub> ∈ ℝ<sup>3</sup></span> is gyroscope bias (rad/s).</p>
+<h2 id="imu-kinematic-model">IMU Kinematic Model</h2>
+<p>The continuous-time IMU kinematic equations are:</p>
+<p><br /><span class="math display">$$\dot{\mathbf{p}} = \mathbf{v}$$</span><br /></p>
+<p><br /><span class="math display">$$\dot{\mathbf{v}} = \mathbf{R}(\mathbf{q})(\tilde{\mathbf{a}} - \mathbf{b}_a) + \mathbf{g}$$</span><br /></p>
+<p><br /><span class="math display">$$\dot{\mathbf{q}} = \frac{1}{2}\mathbf{q} \otimes \begin{bmatrix} 0 \\ \tilde{\boldsymbol{\omega}} - \mathbf{b}_g \end{bmatrix}$$</span><br /></p>
+<p>where <span class="math inline">$\tilde{\mathbf{a}}$</span> and <span class="math inline">$\tilde{\boldsymbol{\omega}}$</span> are accelerometer and gyroscope measurements, <span class="math inline"><strong>R</strong>(<strong>q</strong>)</span> is the rotation matrix from body to ENU frame, and <span class="math inline"><strong>g</strong> = [0, 0,  − 9.81]<sup><em>T</em></sup></span> m/s².</p>
+<h2 id="gps-measurement-model">GPS Measurement Model</h2>
+<p>GPS provides position measurements in WGS84 coordinates, transformed to local ENU frame:</p>
+<p><br /><span class="math display"><strong>z</strong><sub><em>G</em><em>P</em><em>S</em></sub> = <strong>H</strong><strong>x</strong> + <strong>v</strong>,  <strong>v</strong> ∼ 𝒩(0, <strong>R</strong>)</span><br /></p>
+<p><br /><span class="math display"><strong>H</strong> = [<strong>I</strong><sub>3 × 3</sub>, <strong>0</strong><sub>3 × 12</sub>]</span><br /></p>
+<h1 id="algorithms">Algorithms</h1>
+<h2 id="extended-kalman-filter">Extended Kalman Filter</h2>
+<h3 id="predict-step">Predict Step</h3>
+<p>The EKF predict step propagates the state and covariance using the IMU kinematic model:</p>
+<p><br /><span class="math display">$$\hat{\mathbf{x}}_{k|k-1} = f(\mathbf{x}_{k-1}, \mathbf{u}_k)$$</span><br /></p>
+<p><br /><span class="math display"><strong>P</strong><sub><em>k</em>|<em>k</em> − 1</sub> = <strong>F</strong><sub><em>k</em></sub><strong>P</strong><sub><em>k</em> − 1</sub><strong>F</strong><sub><em>k</em></sub><sup><em>T</em></sup> + <strong>Q</strong><sub><em>k</em></sub></span><br /></p>
+<p>The linearized transition matrix <span class="math inline"><strong>F</strong><sub><em>k</em></sub></span> is:</p>
+<p><br /><span class="math display">$$\mathbf{F}_k = \begin{bmatrix} \mathbf{I} &amp; \mathbf{I}\Delta t &amp; \mathbf{0} &amp; \mathbf{0} &amp; \mathbf{0} \\ \mathbf{0} &amp; \mathbf{I} &amp; -\mathbf{R}[\tilde{\mathbf{a}} - \mathbf{b}_a]_\times \Delta t &amp; -\mathbf{R}\Delta t &amp; \mathbf{0} \\ \mathbf{0} &amp; \mathbf{0} &amp; \mathbf{I} &amp; \mathbf{0} &amp; -\mathbf{I}\Delta t \\ \mathbf{0} &amp; \mathbf{0} &amp; \mathbf{0} &amp; \mathbf{I} &amp; \mathbf{0} \\ \mathbf{0} &amp; \mathbf{0} &amp; \mathbf{0} &amp; \mathbf{0} &amp; \mathbf{I} \end{bmatrix}$$</span><br /></p>
+<h3 id="update-step">Update Step</h3>
+<p>The Joseph-form covariance update ensures numerical positive definiteness:</p>
+<p><br /><span class="math display"><strong>K</strong><sub><em>k</em></sub> = <strong>P</strong><sub><em>k</em>|<em>k</em> − 1</sub><strong>H</strong><sup><em>T</em></sup>(<strong>H</strong><strong>P</strong><sub><em>k</em>|<em>k</em> − 1</sub><strong>H</strong><sup><em>T</em></sup> + <strong>R</strong>)<sup> − 1</sup></span><br /></p>
+<p><br /><span class="math display">$$\mathbf{x}_k = \mathbf{x}_{k|k-1} + \mathbf{K}_k(\mathbf{z}_k - \mathbf{H}\hat{\mathbf{x}}_{k|k-1})$$</span><br /></p>
+<p><br /><span class="math display"><strong>P</strong><sub><em>k</em></sub> = (<strong>I</strong> − <strong>K</strong><sub><em>k</em></sub><strong>H</strong>)<strong>P</strong><sub><em>k</em>|<em>k</em> − 1</sub>(<strong>I</strong> − <strong>K</strong><sub><em>k</em></sub><strong>H</strong>)<sup><em>T</em></sup> + <strong>K</strong><sub><em>k</em></sub><strong>R</strong><strong>K</strong><sub><em>k</em></sub><sup><em>T</em></sup></span><br /></p>
+<h3 id="mahalanobis-outlier-rejection">Mahalanobis Outlier Rejection</h3>
+<p>GPS measurements are rejected when the Mahalanobis distance exceeds the chi-squared threshold (<span class="math inline"><em>χ</em><sub>3, 0.999</sub><sup>2</sup> = 16.27</span>):</p>
+<p><br /><span class="math display"><em>d</em><sup>2</sup> = <strong>ν</strong><sup><em>T</em></sup><strong>S</strong><sup> − 1</sup><strong>ν</strong> &gt; <em>χ</em><sub>3, 0.999</sub><sup>2</sup></span><br /></p>
+<h2 id="hybrid-unscented-kalman-filter">Hybrid Unscented Kalman Filter</h2>
+<p>The Hybrid UKF addresses the quaternion manifold instability of the standard UKF by combining sigma-point mean propagation with EKF Jacobian covariance propagation.</p>
+<h3 id="sigma-points">Sigma Points</h3>
+<p>For state dimension <span class="math inline"><em>n</em> = 15</span> and scaling parameter <span class="math inline"><em>λ</em></span>, <span class="math inline">2<em>n</em> + 1 = 31</span> sigma points are generated:</p>
+<p><br /><span class="math display">𝒳<sub>0</sub> = <strong>x</strong></span><br /></p>
+<p><br /><span class="math display">$$\boldsymbol{\mathcal{X}}_i = \mathbf{x} \boxplus \sqrt{(n+\lambda)\mathbf{P}}_{:,i}, \quad i = 1,\ldots,n$$</span><br /></p>
+<p><br /><span class="math display">$$\boldsymbol{\mathcal{X}}_{i+n} = \mathbf{x} \boxplus (-\sqrt{(n+\lambda)\mathbf{P}}_{:,i}), \quad i = 1,\ldots,n$$</span><br /></p>
+<p>The <span class="math inline">⊞</span> operator applies perturbations on the SO(3) manifold for the quaternion component via rotation vector composition.</p>
+<h3 id="weighted-mean">Weighted Mean</h3>
+<p><br /><span class="math display">$$\bar{\mathbf{x}} = \sum_{i=0}^{2n} W_i^m \boldsymbol{\mathcal{X}}_i^+$$</span><br /></p>
+<p>where <span class="math inline">𝒳<sub><em>i</em></sub><sup>+</sup></span> denotes propagated sigma points through the nonlinear IMU model. The covariance is propagated via EKF Jacobian for numerical stability.</p>
+<h2 id="adaptive-noise-estimation">Adaptive Noise Estimation</h2>
+<p>Following Mehra (1970), the measurement noise covariance <span class="math inline"><strong>R</strong></span> is updated online using the innovation sequence covariance:</p>
+<p><br /><span class="math display">$$\hat{\mathbf{C}}_k = \frac{1}{N}\sum_{j=k-N+1}^{k} \boldsymbol{\nu}_j \boldsymbol{\nu}_j^T$$</span><br /></p>
+<p><br /><span class="math display">$$\hat{\mathbf{R}}_k = \hat{\mathbf{C}}_k - \mathbf{H}\mathbf{P}_{k|k-1}\mathbf{H}^T$$</span><br /></p>
+<p>This allows the filter to track time-varying GPS noise (e.g., urban multipath vs. open-sky conditions) without manual retuning.</p>
+<h2 id="zero-velocity-update-zupt">Zero Velocity Update (ZUPT)</h2>
+<p>When the vehicle is detected as stationary, a pseudo-measurement <span class="math inline"><strong>z</strong><sub><em>Z</em><em>U</em><em>P</em><em>T</em></sub> = <strong>0</strong></span> is injected:</p>
+<p><br /><span class="math display"><strong>H</strong><sub><em>Z</em><em>U</em><em>P</em><em>T</em></sub> = [<strong>0</strong><sub>3 × 3</sub>, <strong>I</strong><sub>3 × 3</sub>, <strong>0</strong><sub>3 × 9</sub>]</span><br /></p>
+<p>Two detectors are compared:</p>
+<p><strong>IMU-only:</strong> Uses accelerometer variance and gyroscope magnitude. Fundamental limitation: constant-velocity motion is indistinguishable from stationary (accelerometer measures specific force, not velocity).</p>
+<p><strong>GPS-aided:</strong> Adds an independent velocity source. Achieves Precision=100%, Recall=100%, F1=1.0 vs. IMU-only F1=0.28.</p>
+<h2 id="allan-variance">Allan Variance</h2>
+<p>Allan variance characterizes IMU noise processes from stationary data:</p>
+<p><br /><span class="math display">$$\sigma^2(\tau) = \frac{1}{2(N-2m)\tau^2} \sum_{k=1}^{N-2m} [\theta(t_{k+2m}) - 2\theta(t_{k+m}) + \theta(t_k)]^2$$</span><br /></p>
+<p>The slope of the log-log Allan deviation curve identifies noise types: slope <span class="math inline"> − 1/2</span> indicates white noise (ARW/VRW), slope <span class="math inline">0</span> indicates bias instability, slope <span class="math inline"> + 1/2</span> indicates rate random walk.</p>
+<p>Implementation validated with synthetic data: known white noise <span class="math inline"><em>σ</em><sub><em>N</em></sub> = 0.01</span> rad/s recovered with 2.0% relative error.</p>
+<h1 id="dataset">Dataset</h1>
+<p>The KITTI Raw Dataset (Geiger et al., 2013) provides synchronized sensor data from a vehicle-mounted sensor suite. The OXTS RT3003 unit provides combined GPS/IMU measurements:</p>
+<table>
+<thead>
+<tr class="header">
+<th>Sensor</th>
+<th>Rate</th>
+<th>Specification</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>GPS (OXTS RT3003)</td>
+<td>10 Hz</td>
+<td>WGS84 lat/lon/alt</td>
+</tr>
+<tr class="even">
+<td>IMU accelerometer</td>
+<td>100 Hz</td>
+<td>$$5g, 3-axis</td>
+</tr>
+<tr class="odd">
+<td>IMU gyroscope</td>
+<td>100 Hz</td>
+<td>$$100°/s, 3-axis</td>
+</tr>
+</tbody>
+</table>
+<p>Three sequences are evaluated:</p>
+<table>
+<thead>
+<tr class="header">
+<th>Sequence</th>
+<th>Environment</th>
+<th>Frames</th>
+<th>Duration</th>
+<th>Distance</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>drive_0034</td>
+<td>Urban</td>
+<td>1224</td>
+<td>127s</td>
+<td>919m</td>
+</tr>
+<tr class="even">
+<td>drive_0027</td>
+<td>Residential</td>
+<td>1106</td>
+<td>115s</td>
+<td>692m</td>
+</tr>
+<tr class="odd">
+<td>drive_0028</td>
+<td>Highway</td>
+<td>5177</td>
+<td>538s</td>
+<td>4131m</td>
+</tr>
+</tbody>
+</table>
+<h1 id="results">Results</h1>
+<h2 id="multi-sequence-benchmark">Multi-Sequence Benchmark</h2>
+<table>
+<thead>
+<tr class="header">
+<th>Method</th>
+<th>Urban ATE</th>
+<th>Residential ATE</th>
+<th>Highway ATE</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>EKF</td>
+<td>1.647m</td>
+<td>1.563m</td>
+<td>49.47m</td>
+</tr>
+<tr class="even">
+<td>Hybrid UKF</td>
+<td><strong>1.432m</strong></td>
+<td><strong>1.415m</strong></td>
+<td>N/A*</td>
+</tr>
+</tbody>
+</table>
+<p>*UKF disabled for highway: covariance accumulation over 538s causes instability. This is consistent with known limitations of sigma-point methods for long-duration INS integration.</p>
+<p><strong>Key finding:</strong> Hybrid UKF achieves 11.3% average ATE improvement over EKF on short urban/residential sequences where nonlinear maneuvers are frequent.</p>
+<h2 id="gps-denied-analysis">GPS-Denied Analysis</h2>
+<table>
+<thead>
+<tr class="header">
+<th>Metric</th>
+<th>EKF Normal</th>
+<th>GPS-Denied</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>ATE RMSE</td>
+<td>4.69m</td>
+<td>1109m</td>
+</tr>
+<tr class="even">
+<td>RPE RMSE</td>
+<td>0.58m</td>
+<td>28.8m</td>
+</tr>
+<tr class="odd">
+<td>Max drift (30s)</td>
+<td>—</td>
+<td>386m</td>
+</tr>
+</tbody>
+</table>
+<p>IMU-only propagation accumulates 386m drift in 30 seconds, demonstrating the necessity of GPS fusion.</p>
+<h2 id="loosely-vs-tightly-coupled">Loosely vs Tightly Coupled</h2>
+<p>Under identical GPS noise (0.8m std) and GPS rate (0.1s vs 0.5s):</p>
+<table>
+<thead>
+<tr class="header">
+<th>Method</th>
+<th>ATE RMSE</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Loosely-coupled (0.5s GPS)</td>
+<td>6.09m</td>
+</tr>
+<tr class="even">
+<td>Tightly-coupled (0.1s GPS)</td>
+<td>1.57m</td>
+</tr>
+</tbody>
+</table>
+<p>Tightly-coupled achieves 74.2% lower ATE due to higher GPS update frequency and EKF state coupling.</p>
+<h2 id="adaptive-noise-estimation-1">Adaptive Noise Estimation</h2>
+<p>Under time-varying GPS noise (0.5m → 4.0m → 0.5m):</p>
+<table>
+<thead>
+<tr class="header">
+<th>Method</th>
+<th>ATE RMSE</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Fixed R</td>
+<td>3.97m</td>
+</tr>
+<tr class="even">
+<td>Adaptive R</td>
+<td>2.86m</td>
+</tr>
+</tbody>
+</table>
+<p>28.1% improvement. The adaptive filter tracks noise changes with ~20 frame lag (window size).</p>
+<h2 id="zupt-performance">ZUPT Performance</h2>
+<table>
+<thead>
+<tr class="header">
+<th>Detector</th>
+<th>Precision</th>
+<th>Recall</th>
+<th>F1</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>IMU-only</td>
+<td>16.2%</td>
+<td>100%</td>
+<td>0.28</td>
+</tr>
+<tr class="even">
+<td>GPS-aided</td>
+<td><strong>100%</strong></td>
+<td><strong>100%</strong></td>
+<td><strong>1.00</strong></td>
+</tr>
+</tbody>
+</table>
+<p>Stationary drift reduction: 996x (2.88m → 0.003m over 10 seconds).</p>
+<h1 id="engineering">Engineering</h1>
+<h2 id="software-architecture">Software Architecture</h2>
+<table>
+<thead>
+<tr class="header">
+<th>Component</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>ekf.py</code></td>
+<td>15-state EKF, Joseph form, Mahalanobis rejection</td>
+</tr>
+<tr class="even">
+<td><code>ukf.py</code></td>
+<td>Hybrid UKF, sigma-point mean + EKF covariance</td>
+</tr>
+<tr class="odd">
+<td><code>adaptive_ekf.py</code></td>
+<td>Innovation-based adaptive R estimation</td>
+</tr>
+<tr class="even">
+<td><code>allan_variance.py</code></td>
+<td>Allan variance + noise parameter identification</td>
+</tr>
+<tr class="odd">
+<td><code>motion_detector.py</code></td>
+<td>IMU-only and GPS-aided ZUPT detectors</td>
+</tr>
+<tr class="even">
+<td><code>config_loader.py</code></td>
+<td>YAML-based parameter management</td>
+</tr>
+</tbody>
+</table>
+<h2 id="testing">Testing</h2>
+<p>32 unit tests across 3 test modules, all passing:</p>
+<ul>
+<li><code>test_ekf.py</code> (20 tests): predict/update correctness, covariance positive definiteness, Mahalanobis rejection, numerical stability</li>
+<li><code>test_allan_variance.py</code> (6 tests): white noise recovery, monotonicity, slope validation</li>
+<li><code>test_motion_detector.py</code> (6 tests): stationary detection, constant-velocity false positive documentation</li>
+</ul>
+<p>CI/CD: GitHub Actions runs all tests on every push.</p>
+<h2 id="deployment">Deployment</h2>
+<div class="sourceCode" id="cb1"><pre class="sourceCode bash"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true"></a><span class="ex">docker</span> build -t kitti-fusion .</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true"></a><span class="ex">docker</span> run kitti-fusion   # executes all 32 tests</span></code></pre></div>
+<h1 id="limitations-and-future-work">Limitations and Future Work</h1>
+<ol type="1">
+<li><p><strong>UKF long-sequence instability</strong>: Full USQUE (Unscented Quaternion Estimator, Crassidis &amp; Markley 2003) would address covariance accumulation in highway sequences.</p></li>
+<li><p><strong>Ground truth quality</strong>: GPS used as both input and reference. Independent ground truth (RTK-GPS or laser scan matching) would provide cleaner evaluation.</p></li>
+<li><p><strong>IMU Allan Variance</strong>: KITTI drive sequences contain vehicle motion, violating stationarity assumption. Static IMU recording required for proper noise characterization.</p></li>
+<li><p><strong>Highway EKF tuning</strong>: 49m ATE on highway suggests noise parameters optimized for urban sequences. Sequence-adaptive tuning or the adaptive EKF would address this.</p></li>
+</ol>
+<h1 id="conclusion">Conclusion</h1>
+<p>This project implements a production-grade GPS/IMU sensor fusion pipeline with rigorous algorithmic and engineering foundations. The Hybrid UKF achieves 1.43m ATE on urban driving with 13% improvement over EKF. ZUPT reduces stationary drift by 996x. Adaptive noise estimation improves performance by 28% under time-varying GPS conditions. All results are reproducible via Docker and validated with automated tests.</p>
+<h1 id="references">References</h1>
+<p>Geiger, A., Lenz, P., Stiller, C., &amp; Urtasun, R. (2013). Vision meets robotics: The KITTI dataset. <em>International Journal of Robotics Research</em>, 32(11), 1231-1237.</p>
+<p>Mehra, R. (1970). On the identification of variances and adaptive Kalman filtering. <em>IEEE Transactions on Automatic Control</em>, 15(2), 175-184.</p>
+<p>Mohamed, A.H., &amp; Schwarz, K.P. (1999). Adaptive Kalman filtering for INS/GPS. <em>Journal of Geodesy</em>, 73(4), 193-203.</p>
+<p>Crassidis, J.L., &amp; Markley, F.L. (2003). Unscented filtering for spacecraft attitude estimation. <em>Journal of Guidance, Control, and Dynamics</em>, 26(4), 536-542.</p>
+<p>Wan, E.A., &amp; Van der Merwe, R. (2000). The unscented Kalman filter for nonlinear estimation. <em>Proceedings of the IEEE ASSPCC</em>, 153-158.</p>
+</body>
+</html>

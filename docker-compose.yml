@@ -1,0 +1,11 @@
+version: "3.9"
+
+services:
+  ekf:
+    build: .
+    volumes:
+      - /home/ali/kitti_raw:/data/kitti_raw:ro
+      - /home/ali/kitti-fusion/results:/app/results
+    environment:
+      - KITTI_BASEPATH=/data/kitti_raw
+    command: python src/main.py

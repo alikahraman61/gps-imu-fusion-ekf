@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Python kur
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Bağımlılıkları kur
+        run: |
+          pip install --upgrade pip
+          pip install numpy scipy matplotlib geographiclib \
+                      allantools evo pandas tqdm pykitti \
+                      opencv-python-headless pyyaml \
+                      pytest pytest-cov
+
+      - name: Testleri çalıştır
+        run: |
+          pytest tests/ -v --cov=src --cov-report=term-missing
+
+      - name: Coverage badge
+        run: |
+          pip install coverage-badge
+          coverage-badge -o coverage.svg -f

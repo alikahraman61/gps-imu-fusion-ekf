@@ -1,0 +1,7 @@
+venv/
+__pycache__/
+*.pyc
+*.zip
+kitti_raw/
+results/figures/*.png
+.idea/

@@ -188,8 +188,49 @@ class EKF:
         IKH    = np.eye(15) - K @ H
         self.P = IKH @ self.P @ IKH.T + K @ R_noise @ K.T
 
-        logger.debug("GPS update accepted — innovation norm: %.3f", float(np.linalg.norm(innovation)))
+        logger.debug(
+            "GPS update accepted — innovation norm: %.3f",
+            float(np.linalg.norm(innovation)),
+        )
         return True
+
+    def update_zupt(self, vel_noise: float = 0.01) -> None:
+        """
+        Zero Velocity Update (ZUPT).
+
+        Araç hareketsiz tespit edildiğinde hızın sıfır olduğunu bir
+        ölçüm olarak EKF'e bildirir. Bu, IMU entegrasyonundan biriken
+        hız hatasını sıfırlayarak GPS-denied senaryolarda drift'i
+        ciddi şekilde azaltır.
+
+        Parameters
+        ----------
+        vel_noise : float
+            Zero-velocity pseudo-measurement noise std (m/s).
+            Küçük değer = daha güçlü sıfırlama.
+        """
+        H = np.zeros((3, 15))
+        H[0:3, 3:6] = np.eye(3)  # velocity state'lerini gözlemle
+
+        z      = np.zeros(3)     # ölçülen hız sıfır
+        z_pred = self.x[3:6]     # tahmin edilen hız
+        innovation = z - z_pred
+
+        R_noise = np.eye(3) * vel_noise ** 2
+
+        S = H @ self.P @ H.T + R_noise
+        K = self.P @ H.T @ np.linalg.inv(S)
+
+        dx = K @ innovation
+        self.x[0:3]   += dx[0:3]
+        self.x[3:6]   += dx[3:6]
+        self.x[10:13] += dx[9:12]
+        self.x[13:16] += dx[12:15]
+
+        IKH    = np.eye(15) - K @ H
+        self.P = IKH @ self.P @ IKH.T + K @ R_noise @ K.T
+
+        logger.debug("ZUPT applied — velocity reset toward zero")
 
     def get_position(self) -> NDArray[np.float64]:
         """Returns current position estimate [e, n, u] in metres."""
